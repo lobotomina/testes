@@ -1,9 +1,28 @@
-streamlit>=1.22.0
-pandas>=1.5.0
-numpy>=1.23.0
-geopandas>=0.12.0
-matplotlib>=3.6.0
-plotly>=5.11.0
-openpyxl>=3.0.0
-openpyxl>=3.0.0
-libpysal>=4.13.0
+# Core dependencies
+streamlit==1.28.1
+pandas==2.0.3
+numpy==1.24.3
+
+# Geospatial
+geopandas==0.13.2
+folium==0.14.0
+streamlit-folium==0.13.0
+shapely==2.0.1
+pyproj==3.6.0
+fiona==1.9.4
+
+# Spatial analysis
+libpysal==4.7.0
+esda==2.4.3
+scipy==1.11.1
+
+# Visualization
+plotly==5.15.0
+
+# File handling
+openpyxl==3.1.2
+xlrd==2.0.1
+
+# Additional utilities
+Pillow==10.0.0
+branca==0.6.0
