@@ -9,3 +9,4 @@ libpysal>=4.13.0
 esda>=2.7.0
 openpyxl>=3.0.0
 matplotlib>=3.7.0
+seaborn>=0.12.0
