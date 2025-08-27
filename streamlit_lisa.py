@@ -1,27 +1,20 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import geopandas as gpd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import folium
 from streamlit_folium import st_folium
-from libpysal.weights import Queen
-from esda.moran import Moran_Local
-import tempfile
-import os
-from io import BytesIO
 from pathlib import Path
 
 # Configuração da página
 st.set_page_config(
-    page_title="Análise Espacial LISA - Abandono Escolar", 
+    page_title="Análise Espacial LISA - Deploy Safe", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS customizado para melhorar a aparência
+# CSS customizado
 st.markdown("""
 <style>
     .main-header {
@@ -30,20 +23,6 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
-    }
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        padding-left: 20px;
-        padding-right: 20px;
     }
     .data-info {
         background-color: #e8f4fd;
@@ -56,128 +35,221 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Título principal
-st.markdown('<h1 class="main-header">📊 Análise Espacial LISA - Abandono Escolar no Ensino Médio</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">📊 Análise Espacial LISA - Versão Deploy</h1>', unsafe_allow_html=True)
 
 # Banner informativo
 st.markdown("""
 <div class="data-info">
-    <h3>📊 Dados Pré-carregados</h3>
-    <p>Este aplicativo utiliza os dados de abandono escolar e informações geográficas já carregados no sistema. 
-    Simplesmente selecione o ano desejado para iniciar a análise!</p>
+    <h3>🚀 Versão Otimizada para Deploy</h3>
+    <p>Esta versão foi otimizada para funcionar em plataformas de deploy como Streamlit Cloud, 
+    com dependências mínimas e máxima compatibilidade.</p>
 </div>
 """, unsafe_allow_html=True)
 
+# Função para tentar importar GeoPandas
+@st.cache_data
+def try_import_geopandas():
+    """Tenta importar GeoPandas, retorna False se falhar"""
+    try:
+        import geopandas as gpd
+        from libpysal.weights import Queen
+        from esda.moran import Moran_Local
+        return True, gpd, Queen, Moran_Local
+    except ImportError as e:
+        st.error(f"⚠️ Dependências espaciais não disponíveis: {e}")
+        st.info("💡 Executando em modo simplificado sem análise LISA")
+        return False, None, None, None
+
+# Verificar disponibilidade de dependências espaciais
+SPATIAL_AVAILABLE, gpd, Queen, Moran_Local = try_import_geopandas()
+
 # Cache para carregamento dos dados
 @st.cache_data
-def load_data():
-    """Carrega os dados dos caminhos relativos"""
+def load_sample_data():
+    """Carrega dados de exemplo se os arquivos reais não estiverem disponíveis"""
     try:
-        # Definir caminhos relativos
-        base_path = Path(".")  # Diretório atual
+        # Tentar carregar dados reais primeiro
+        base_path = Path(".")
         abandono_path = base_path / "data" / "txabandono-municipios.xlsx"
         municipios_path = base_path / "data" / "municipios.csv"
         
-        # Verificar se os arquivos existem
-        if not abandono_path.exists():
-            st.error(f"❌ Arquivo não encontrado: {abandono_path}")
-            st.info("💡 Certifique-se de que o arquivo está em: data/txabandono-municipios.xlsx")
-            return None, None, False
+        if abandono_path.exists() and municipios_path.exists():
+            # Carregar dados reais
+            df = pd.read_excel(abandono_path)
+            df_geo = pd.read_csv(municipios_path, encoding="latin1")
             
-        if not municipios_path.exists():
-            st.error(f"❌ Arquivo não encontrado: {municipios_path}")
-            st.info("💡 Certifique-se de que o arquivo está em: data/municipios.csv")
-            return None, None, False
-        
-        # Carregar dados de abandono
-        st.info(f"📂 Carregando dados de: {abandono_path}")
-        df = pd.read_excel(abandono_path)
-        
-        # Processar dados de abandono
-        df["taxa"] = (
-            df["Total Abandono no Ens. Médio"]
-            .astype(str)
-            .str.replace(",", ".", regex=False)
-            .replace("--", np.nan)
-            .pipe(pd.to_numeric, errors="coerce")
-        )
-        df = df.dropna(subset=["taxa"])
-        df["cod_mun"] = df["cod_mun"].astype(int)
-        
-        # Carregar dados geográficos
-        st.info(f"📂 Carregando dados de: {municipios_path}")
-        df_geo = pd.read_csv(municipios_path, encoding="latin1")
-        
-        return df, df_geo, True
-        
+            # Processar dados de abandono
+            df["taxa"] = (
+                df["Total Abandono no Ens. Médio"]
+                .astype(str)
+                .str.replace(",", ".", regex=False)
+                .replace("--", np.nan)
+                .pipe(pd.to_numeric, errors="coerce")
+            )
+            df = df.dropna(subset=["taxa"])
+            df["cod_mun"] = df["cod_mun"].astype(int)
+            
+            return df, df_geo, True, "real"
+        else:
+            # Gerar dados de exemplo
+            return generate_sample_data()
+            
     except Exception as e:
-        st.error(f"❌ Erro ao carregar dados: {e}")
-        st.info("""
-        💡 **Estrutura de pastas esperada:**
-        ```
-        seu_projeto/
-        ├── streamlit_lisa_vscode.py  (este arquivo)
-        └── data/
-            ├── municipios.csv
-            └── txabandono-municipios.xlsx
-        ```
-        """)
-        return None, None, False
+        st.warning(f"⚠️ Erro ao carregar dados reais: {e}")
+        return generate_sample_data()
+
+def generate_sample_data():
+    """Gera dados de exemplo para demonstração"""
+    np.random.seed(42)
+    
+    # Gerar dados de exemplo
+    n_municipios = 100
+    anos = [2020, 2021, 2022, 2023]
+    
+    # Dados de abandono
+    data_abandono = []
+    for ano in anos:
+        for i in range(n_municipios):
+            data_abandono.append({
+                'cod_mun': i + 1,
+                'Ano': ano,
+                'taxa': np.random.normal(5, 2),  # Taxa média de 5% com desvio de 2%
+                'UF': np.random.choice(['SP', 'RJ', 'MG', 'RS', 'PR']),
+                'Região': np.random.choice(['Sudeste', 'Sul', 'Nordeste'])
+            })
+    
+    df_abandono = pd.DataFrame(data_abandono)
+    df_abandono['taxa'] = np.clip(df_abandono['taxa'], 0, 20)  # Limitar entre 0 e 20%
+    
+    # Dados geográficos
+    data_geo = []
+    for i in range(n_municipios):
+        data_geo.append({
+            'cod_mun': i + 1,
+            'municipio': f'Município {i+1}',
+            'latitude': np.random.uniform(-33, 5),  # Latitude do Brasil
+            'longitude': np.random.uniform(-74, -34)  # Longitude do Brasil
+        })
+    
+    df_geo = pd.DataFrame(data_geo)
+    
+    return df_abandono, df_geo, True, "sample"
 
 @st.cache_data
-def calculate_lisa_for_year(df, df_geo, ano):
-    """Calcula estatísticas LISA para um ano específico com cache"""
-    df_geo = df_geo.rename(columns={"cod_mun": "code_muni"})
-    df_geo["code_muni"] = df_geo["code_muni"].astype(int)
-    
-    # Criar geometria
-    gdf_base = gpd.GeoDataFrame(
-        df_geo,
-        geometry=gpd.points_from_xy(df_geo["longitude"], df_geo["latitude"]),
-        crs="EPSG:4326"
-    )
-    
+def calculate_simple_statistics(df, df_geo, ano):
+    """Calcula estatísticas simples sem LISA (fallback)"""
     # Filtrar dados do ano
-    df_ano = df[df["Ano"] == ano].copy()
+    df_ano = df[df['Ano'] == ano].copy()
     if df_ano.empty:
         return None
-        
-    df_ano["taxa"] = df_ano["taxa"].astype(float)
+    
+    # Calcular média por município
     df_media = (
-        df_ano.groupby("cod_mun")["taxa"]
+        df_ano.groupby('cod_mun')['taxa']
         .mean()
         .reset_index()
-        .rename(columns={"taxa": "taxa_abandono"})
+        .rename(columns={'taxa': 'taxa_abandono'})
     )
-
-    gdf = gdf_base.merge(df_media, left_on="code_muni", right_on="cod_mun", how="inner")
-
-    if gdf.empty:
-        return None
-
-    # Cálculo LISA
-    w = Queen.from_dataframe(gdf)
-    w.transform = "r"
-    y = gdf["taxa_abandono"].values
-    lisa = Moran_Local(y, w)
-
-    gdf["LISA_I"] = lisa.Is
-    gdf["LISA_p"] = lisa.p_sim
-    gdf["LISA_cluster"] = lisa.q
     
-    # Mapear clusters para rótulos
-    cluster_map = {1: "HH", 2: "LH", 3: "LL", 4: "HL"}
-    gdf["LISA_cluster_label"] = gdf["LISA_cluster"].map(cluster_map)
-    gdf.loc[gdf["LISA_p"] >= 0.05, "LISA_cluster_label"] = "ns"
+    # Juntar com dados geográficos
+    df_combined = df_geo.merge(df_media, on='cod_mun', how='inner')
+    
+    # Adicionar classificação simples baseada em quartis
+    quartis = df_combined['taxa_abandono'].quantile([0.25, 0.5, 0.75])
+    
+    def classify_rate(rate):
+        if rate <= quartis[0.25]:
+            return "Baixo"
+        elif rate <= quartis[0.5]:
+            return "Médio-Baixo"
+        elif rate <= quartis[0.75]:
+            return "Médio-Alto"
+        else:
+            return "Alto"
+    
+    df_combined['classificacao'] = df_combined['taxa_abandono'].apply(classify_rate)
+    
+    # Juntar com informações regionais
+    df_combined = df_combined.merge(
+        df_ano[['cod_mun', 'UF', 'Região']].drop_duplicates(),
+        on='cod_mun', 
+        how='left'
+    )
+    
+    return df_combined
 
-    # Juntar Região e UF
-    gdf = gdf.merge(df_ano[["cod_mun", "UF", "Região"]].drop_duplicates(),
-                    left_on="code_muni", right_on="cod_mun", how="left")
+@st.cache_data
+def calculate_lisa_analysis(df, df_geo, ano):
+    """Calcula análise LISA completa (se disponível)"""
+    if not SPATIAL_AVAILABLE:
+        return calculate_simple_statistics(df, df_geo, ano)
+    
+    try:
+        # Preparar dados
+        df_geo_renamed = df_geo.rename(columns={"cod_mun": "code_muni"})
+        df_geo_renamed["code_muni"] = df_geo_renamed["code_muni"].astype(int)
+        
+        # Criar GeoDataFrame
+        gdf_base = gpd.GeoDataFrame(
+            df_geo_renamed,
+            geometry=gpd.points_from_xy(df_geo_renamed["longitude"], df_geo_renamed["latitude"]),
+            crs="EPSG:4326"
+        )
+        
+        # Filtrar dados do ano
+        df_ano = df[df["Ano"] == ano].copy()
+        if df_ano.empty:
+            return None
+            
+        df_ano["taxa"] = df_ano["taxa"].astype(float)
+        df_media = (
+            df_ano.groupby("cod_mun")["taxa"]
+            .mean()
+            .reset_index()
+            .rename(columns={"taxa": "taxa_abandono"})
+        )
 
-    return gdf
+        gdf = gdf_base.merge(df_media, left_on="code_muni", right_on="cod_mun", how="inner")
 
-def create_interactive_map(gdf, ano, map_type="cluster"):
-    """Cria mapa interativo com Folium"""
-    # Cores para clusters
+        if gdf.empty:
+            return None
+
+        # Cálculo LISA
+        w = Queen.from_dataframe(gdf)
+        w.transform = "r"
+        y = gdf["taxa_abandono"].values
+        lisa = Moran_Local(y, w)
+
+        gdf["LISA_I"] = lisa.Is
+        gdf["LISA_p"] = lisa.p_sim
+        gdf["LISA_cluster"] = lisa.q
+        
+        # Mapear clusters para rótulos
+        cluster_map = {1: "HH", 2: "LH", 3: "LL", 4: "HL"}
+        gdf["LISA_cluster_label"] = gdf["LISA_cluster"].map(cluster_map)
+        gdf.loc[gdf["LISA_p"] >= 0.05, "LISA_cluster_label"] = "ns"
+
+        # Juntar informações regionais
+        gdf = gdf.merge(df_ano[["cod_mun", "UF", "Região"]].drop_duplicates(),
+                        left_on="code_muni", right_on="cod_mun", how="left")
+
+        return gdf
+        
+    except Exception as e:
+        st.warning(f"⚠️ Erro na análise LISA: {e}")
+        return calculate_simple_statistics(df, df_geo, ano)
+
+def create_simple_map(df, ano, map_type="classification"):
+    """Cria mapa simples com Folium"""
+    # Cores para classificação
+    cores_classificacao = {
+        "Baixo": "#1f77b4",     # Azul
+        "Médio-Baixo": "#2ca02c", # Verde
+        "Médio-Alto": "#ff7f0e",  # Laranja
+        "Alto": "#d62728"         # Vermelho
+    }
+    
+    # Cores para clusters LISA (se disponível)
     cores_cluster = {
         "HH": "#d62728",  # Vermelho
         "LL": "#1f77b4",  # Azul
@@ -188,14 +260,23 @@ def create_interactive_map(gdf, ano, map_type="cluster"):
     
     # Criar mapa base centrado no Brasil
     m = folium.Map(
-        location=[-14.2350, -51.9253],  # Centro do Brasil
+        location=[-14.2350, -51.9253],
         zoom_start=4,
         tiles='OpenStreetMap'
     )
     
     # Adicionar pontos ao mapa
-    for idx, row in gdf.iterrows():
-        if map_type == "cluster":
+    for idx, row in df.iterrows():
+        if map_type == "classification" and 'classificacao' in df.columns:
+            color = cores_classificacao.get(row["classificacao"], "#7f7f7f")
+            popup_text = f"""
+            <b>{row.get('municipio', 'N/A')}</b><br>
+            UF: {row.get('UF', 'N/A')}<br>
+            Região: {row.get('Região', 'N/A')}<br>
+            Taxa Abandono: {row['taxa_abandono']:.2f}%<br>
+            Classificação: {row['classificacao']}
+            """
+        elif map_type == "cluster" and 'LISA_cluster_label' in df.columns:
             color = cores_cluster.get(row["LISA_cluster_label"], "#7f7f7f")
             popup_text = f"""
             <b>{row.get('municipio', 'N/A')}</b><br>
@@ -203,22 +284,18 @@ def create_interactive_map(gdf, ano, map_type="cluster"):
             Região: {row.get('Região', 'N/A')}<br>
             Taxa Abandono: {row['taxa_abandono']:.2f}%<br>
             Cluster: {row['LISA_cluster_label']}<br>
-            p-valor: {row['LISA_p']:.3f}
+            p-valor: {row.get('LISA_p', 'N/A')}
             """
-        else:  # significance
-            color = "#d62728" if row["LISA_p"] < 0.05 else "#7f7f7f"
+        else:
+            color = "#1f77b4"
             popup_text = f"""
             <b>{row.get('municipio', 'N/A')}</b><br>
-            UF: {row.get('UF', 'N/A')}<br>
-            Região: {row.get('Região', 'N/A')}<br>
-            Taxa Abandono: {row['taxa_abandono']:.2f}%<br>
-            p-valor: {row['LISA_p']:.3f}<br>
-            Significativo: {'Sim' if row['LISA_p'] < 0.05 else 'Não'}
+            Taxa Abandono: {row['taxa_abandono']:.2f}%
             """
         
         folium.CircleMarker(
-            location=[row.geometry.y, row.geometry.x],
-            radius=3,
+            location=[row['latitude'], row['longitude']],
+            radius=4,
             popup=popup_text,
             color=color,
             fill=True,
@@ -228,306 +305,273 @@ def create_interactive_map(gdf, ano, map_type="cluster"):
     
     return m
 
-def create_plotly_charts(gdf):
-    """Cria gráficos interativos com Plotly"""
-    # Gráfico de barras - distribuição de clusters
-    cluster_counts = gdf['LISA_cluster_label'].value_counts()
+def create_charts(df):
+    """Cria gráficos com Plotly"""
+    charts = []
     
-    fig_bar = px.bar(
-        x=cluster_counts.index,
-        y=cluster_counts.values,
-        title="Distribuição de Clusters LISA",
-        labels={'x': 'Tipo de Cluster', 'y': 'Número de Municípios'},
-        color=cluster_counts.index,
-        color_discrete_map={
-            "HH": "#d62728", "LL": "#1f77b4", "LH": "#2ca02c", 
-            "HL": "#ff7f0e", "ns": "#7f7f7f"
-        }
-    )
-    fig_bar.update_layout(showlegend=False)
-    
-    # Histograma das taxas de abandono
+    # Gráfico 1: Distribuição das taxas
     fig_hist = px.histogram(
-        gdf, 
+        df, 
         x='taxa_abandono',
         title="Distribuição das Taxas de Abandono",
         labels={'taxa_abandono': 'Taxa de Abandono (%)', 'count': 'Frequência'},
-        nbins=30
+        nbins=20
     )
+    charts.append(("Distribuição", fig_hist))
     
-    # Boxplot por região
-    if 'Região' in gdf.columns:
+    # Gráfico 2: Por classificação ou cluster
+    if 'classificacao' in df.columns:
+        class_counts = df['classificacao'].value_counts()
+        fig_bar = px.bar(
+            x=class_counts.index,
+            y=class_counts.values,
+            title="Distribuição por Classificação",
+            labels={'x': 'Classificação', 'y': 'Número de Municípios'},
+            color=class_counts.index
+        )
+        charts.append(("Classificação", fig_bar))
+    
+    if 'LISA_cluster_label' in df.columns:
+        cluster_counts = df['LISA_cluster_label'].value_counts()
+        fig_cluster = px.bar(
+            x=cluster_counts.index,
+            y=cluster_counts.values,
+            title="Distribuição de Clusters LISA",
+            labels={'x': 'Tipo de Cluster', 'y': 'Número de Municípios'},
+            color=cluster_counts.index
+        )
+        charts.append(("Clusters LISA", fig_cluster))
+    
+    # Gráfico 3: Por região (se disponível)
+    if 'Região' in df.columns:
         fig_box = px.box(
-            gdf, 
+            df, 
             x='Região', 
             y='taxa_abandono',
             title="Taxa de Abandono por Região",
             labels={'taxa_abandono': 'Taxa de Abandono (%)', 'Região': 'Região'}
         )
-        fig_box.update_xaxes(tickangle=45)
-    else:
-        fig_box = None
+        charts.append(("Por Região", fig_box))
     
-    return fig_bar, fig_hist, fig_box
+    return charts
 
-# Verificar estrutura de pastas
-st.sidebar.header("📁 Verificação de Arquivos")
+# Interface principal
+def main():
+    # Carregar dados
+    with st.spinner("🔄 Carregando dados..."):
+        df, df_geo, data_loaded, data_type = load_sample_data()
 
-# Mostrar estrutura esperada
-with st.sidebar.expander("📋 Estrutura de Pastas Esperada"):
-    st.code("""
-    seu_projeto/
-    ├── streamlit_lisa_vscode.py
-    └── data/
-        ├── municipios.csv
-        └── txabandono-municipios.xlsx
-    """)
-
-# Verificar se os arquivos existem
-base_path = Path(".")
-abandono_path = base_path / "data" / "txabandono-municipios.xlsx"
-municipios_path = base_path / "data" / "municipios.csv"
-
-if abandono_path.exists():
-    st.sidebar.success("✅ txabandono-municipios.xlsx encontrado")
-else:
-    st.sidebar.error("❌ txabandono-municipios.xlsx não encontrado")
-
-if municipios_path.exists():
-    st.sidebar.success("✅ municipios.csv encontrado")
-else:
-    st.sidebar.error("❌ municipios.csv não encontrado")
-
-# Carregar dados automaticamente
-if abandono_path.exists() and municipios_path.exists():
-    with st.spinner("🔄 Carregando dados do sistema..."):
-        df, df_geo, data_loaded = load_data()
-
-    if data_loaded and df is not None and df_geo is not None:
-        # Sidebar com informações dos dados
+    if data_loaded:
+        # Informações sobre os dados
         st.sidebar.header("📊 Informações dos Dados")
-        st.sidebar.success(f"""
-        **✅ Dados Carregados com Sucesso!**
         
+        if data_type == "sample":
+            st.sidebar.warning("⚠️ Usando dados de exemplo")
+            st.sidebar.info("Para usar dados reais, coloque os arquivos na pasta data/")
+        else:
+            st.sidebar.success("✅ Dados reais carregados")
+        
+        st.sidebar.info(f"""
         **Municípios:** {len(df['cod_mun'].unique())}  
         **Anos disponíveis:** {len(df['Ano'].unique())}  
         **Total de registros:** {len(df)}
-        **Período:** {df['Ano'].min()} - {df['Ano'].max()}
         """)
         
-        # Mostrar anos disponíveis
+        # Seleção de ano
         anos_disponiveis = sorted(df['Ano'].unique())
-        st.sidebar.info(f"**Anos disponíveis:** {', '.join(map(str, anos_disponiveis))}")
-        
-        # Seleção de ano - PRINCIPAL CONTROLE
-        st.sidebar.header("🎯 Seleção de Análise")
         ano_selecionado = st.sidebar.selectbox(
             "📅 Selecione o Ano para Análise",
             anos_disponiveis,
-            index=len(anos_disponiveis)-1,  # Último ano por padrão
-            help="Escolha o ano que deseja analisar"
+            index=len(anos_disponiveis)-1
         )
         
         # Opções de visualização
         st.sidebar.header("🔍 Opções de Visualização")
-        mostrar_mapas = st.sidebar.checkbox("🗺️ Mostrar mapas interativos", value=True)
-        mostrar_graficos = st.sidebar.checkbox("📈 Mostrar gráficos estatísticos", value=True)
-        mostrar_detalhes = st.sidebar.checkbox("📋 Mostrar dados detalhados", value=True)
+        mostrar_mapas = st.sidebar.checkbox("🗺️ Mostrar mapas", value=True)
+        mostrar_graficos = st.sidebar.checkbox("📈 Mostrar gráficos", value=True)
+        mostrar_dados = st.sidebar.checkbox("📋 Mostrar dados", value=True)
         
-        # Calcular LISA para o ano selecionado
-        with st.spinner(f"🧮 Calculando estatísticas LISA para {ano_selecionado}..."):
-            gdf = calculate_lisa_for_year(df, df_geo, ano_selecionado)
+        # Calcular análise para o ano selecionado
+        with st.spinner(f"🧮 Processando dados para {ano_selecionado}..."):
+            if SPATIAL_AVAILABLE:
+                resultado = calculate_lisa_analysis(df, df_geo, ano_selecionado)
+                analysis_type = "LISA"
+            else:
+                resultado = calculate_simple_statistics(df, df_geo, ano_selecionado)
+                analysis_type = "Estatística Simples"
         
-        if gdf is not None:
+        if resultado is not None:
             # Métricas principais
-            st.subheader(f"📊 Resultados da Análise LISA - {ano_selecionado}")
+            st.subheader(f"📊 Resultados da Análise {analysis_type} - {ano_selecionado}")
             
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                total_municipios = len(gdf)
-                st.metric("🏘️ Total de Municípios", total_municipios)
+                st.metric("🏘️ Total de Municípios", len(resultado))
             
             with col2:
-                significativos = len(gdf[gdf['LISA_p'] < 0.05])
-                percentual_sig = (significativos / total_municipios) * 100
-                st.metric("✅ Clusters Significativos", f"{significativos} ({percentual_sig:.1f}%)")
+                if 'LISA_p' in resultado.columns:
+                    significativos = len(resultado[resultado['LISA_p'] < 0.05])
+                    st.metric("✅ Clusters Significativos", significativos)
+                else:
+                    altos = len(resultado[resultado['classificacao'] == 'Alto'])
+                    st.metric("🔴 Taxa Alta", altos)
             
             with col3:
-                taxa_media = gdf['taxa_abandono'].mean()
-                st.metric("📈 Taxa Média de Abandono", f"{taxa_media:.2f}%")
+                taxa_media = resultado['taxa_abandono'].mean()
+                st.metric("📈 Taxa Média", f"{taxa_media:.2f}%")
             
             with col4:
-                moran_i = gdf['LISA_I'].mean()
-                st.metric("🔗 Índice de Moran (médio)", f"{moran_i:.3f}")
+                if 'LISA_I' in resultado.columns:
+                    moran_i = resultado['LISA_I'].mean()
+                    st.metric("🔗 Moran's I", f"{moran_i:.3f}")
+                else:
+                    desvio = resultado['taxa_abandono'].std()
+                    st.metric("📊 Desvio Padrão", f"{desvio:.2f}%")
             
-            # Tabs para diferentes visualizações
-            tabs_list = []
+            # Visualizações
             if mostrar_mapas:
-                tabs_list.extend(["🗺️ Mapa de Clusters", "📊 Mapa de Significância"])
-            if mostrar_graficos:
-                tabs_list.append("📈 Gráficos Estatísticos")
-            if mostrar_detalhes:
-                tabs_list.append("📋 Dados Detalhados")
-            
-            if tabs_list:
-                tabs = st.tabs(tabs_list)
-                tab_index = 0
+                st.subheader("🗺️ Mapas Interativos")
                 
-                if mostrar_mapas:
-                    # Tab Mapa de Clusters
-                    with tabs[tab_index]:
-                        st.subheader(f"Mapa LISA - Clusters - {ano_selecionado}")
-                        mapa_cluster = create_interactive_map(gdf, ano_selecionado, "cluster")
-                        st_folium(mapa_cluster, width=700, height=500)
-                        
-                        # Legenda
-                        st.markdown("""
-                        **Legenda dos Clusters:**
-                        - 🔴 **HH (Alto-Alto):** Municípios com alta taxa cercados por municípios com alta taxa
-                        - 🔵 **LL (Baixo-Baixo):** Municípios com baixa taxa cercados por municípios com baixa taxa  
-                        - 🟢 **LH (Baixo-Alto):** Municípios com baixa taxa cercados por municípios com alta taxa
-                        - 🟠 **HL (Alto-Baixo):** Municípios com alta taxa cercados por municípios com baixa taxa
-                        - ⚫ **ns (Não significativo):** Sem padrão espacial significativo (p ≥ 0.05)
-                        """)
-                    tab_index += 1
+                if 'LISA_cluster_label' in resultado.columns:
+                    # Mapa LISA
+                    st.markdown("**Mapa de Clusters LISA:**")
+                    mapa_lisa = create_simple_map(resultado, ano_selecionado, "cluster")
+                    st_folium(mapa_lisa, width=700, height=400)
                     
-                    # Tab Mapa de Significância
-                    with tabs[tab_index]:
-                        st.subheader(f"Mapa LISA - Significância Estatística - {ano_selecionado}")
-                        mapa_sig = create_interactive_map(gdf, ano_selecionado, "significance")
-                        st_folium(mapa_sig, width=700, height=500)
-                        
-                        st.markdown("""
-                        **Legenda da Significância:**
-                        - 🔴 **Significativo (p < 0.05):** Padrão espacial estatisticamente significativo
-                        - ⚫ **Não significativo (p ≥ 0.05):** Sem padrão espacial significativo
-                        """)
-                    tab_index += 1
-                
-                if mostrar_graficos:
-                    # Tab Gráficos
-                    with tabs[tab_index]:
-                        st.subheader("Análise Estatística")
-                        
-                        fig_bar, fig_hist, fig_box = create_plotly_charts(gdf)
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.plotly_chart(fig_bar, use_container_width=True)
-                        with col2:
-                            st.plotly_chart(fig_hist, use_container_width=True)
-                        
-                        if fig_box:
-                            st.plotly_chart(fig_box, use_container_width=True)
-                    tab_index += 1
-                
-                if mostrar_detalhes:
-                    # Tab Dados Detalhados
-                    with tabs[tab_index]:
-                        st.subheader("Dados Detalhados")
-                        
-                        # Filtros para os dados
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            cluster_filter = st.multiselect(
-                                "Filtrar por tipo de cluster:",
-                                options=gdf['LISA_cluster_label'].unique(),
-                                default=gdf['LISA_cluster_label'].unique()
-                            )
-                        with col2:
-                            sig_filter = st.selectbox(
-                                "Filtrar por significância:",
-                                options=["Todos", "Significativos (p < 0.05)", "Não significativos (p ≥ 0.05)"]
-                            )
-                        
-                        # Aplicar filtros
-                        gdf_filtered = gdf[gdf['LISA_cluster_label'].isin(cluster_filter)]
-                        if sig_filter == "Significativos (p < 0.05)":
-                            gdf_filtered = gdf_filtered[gdf_filtered['LISA_p'] < 0.05]
-                        elif sig_filter == "Não significativos (p ≥ 0.05)":
-                            gdf_filtered = gdf_filtered[gdf_filtered['LISA_p'] >= 0.05]
-                        
-                        # Mostrar dados
-                        colunas_mostrar = ['municipio', 'UF', 'Região', 'taxa_abandono', 
-                                         'LISA_cluster_label', 'LISA_I', 'LISA_p']
-                        colunas_disponiveis = [col for col in colunas_mostrar if col in gdf_filtered.columns]
-                        
-                        st.dataframe(
-                            gdf_filtered[colunas_disponiveis].round(3),
-                            use_container_width=True
-                        )
-                        
-                        # Download dos dados
-                        @st.cache_data
-                        def convert_df_to_csv(df):
-                            return df.to_csv(index=False).encode('utf-8')
-                        
-                        csv_data = convert_df_to_csv(gdf_filtered[colunas_disponiveis])
-                        st.download_button(
-                            label="📥 Baixar dados filtrados (CSV)",
-                            data=csv_data,
-                            file_name=f"lisa_dados_{ano_selecionado}.csv",
-                            mime="text/csv"
-                        )
+                    st.markdown("""
+                    **Legenda:**
+                    - 🔴 **HH:** Alta taxa, vizinhos com alta taxa
+                    - 🔵 **LL:** Baixa taxa, vizinhos com baixa taxa  
+                    - 🟢 **LH:** Baixa taxa, vizinhos com alta taxa
+                    - 🟠 **HL:** Alta taxa, vizinhos com baixa taxa
+                    - ⚫ **ns:** Não significativo
+                    """)
+                else:
+                    # Mapa de classificação simples
+                    st.markdown("**Mapa de Classificação por Quartis:**")
+                    mapa_class = create_simple_map(resultado, ano_selecionado, "classification")
+                    st_folium(mapa_class, width=700, height=400)
+                    
+                    st.markdown("""
+                    **Legenda:**
+                    - 🔵 **Baixo:** 25% menores taxas
+                    - 🟢 **Médio-Baixo:** 25%-50%
+                    - 🟠 **Médio-Alto:** 50%-75%
+                    - 🔴 **Alto:** 25% maiores taxas
+                    """)
             
-            # Resumo estatístico sempre visível
+            if mostrar_graficos:
+                st.subheader("📈 Análise Estatística")
+                
+                charts = create_charts(resultado)
+                
+                # Mostrar gráficos em colunas
+                if len(charts) >= 2:
+                    col1, col2 = st.columns(2)
+                    for i, (title, fig) in enumerate(charts):
+                        if i % 2 == 0:
+                            with col1:
+                                st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            with col2:
+                                st.plotly_chart(fig, use_container_width=True)
+                else:
+                    for title, fig in charts:
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            if mostrar_dados:
+                st.subheader("📋 Dados Detalhados")
+                
+                # Filtros
+                if 'LISA_cluster_label' in resultado.columns:
+                    cluster_filter = st.multiselect(
+                        "Filtrar por cluster:",
+                        options=resultado['LISA_cluster_label'].unique(),
+                        default=resultado['LISA_cluster_label'].unique()
+                    )
+                    resultado_filtrado = resultado[resultado['LISA_cluster_label'].isin(cluster_filter)]
+                elif 'classificacao' in resultado.columns:
+                    class_filter = st.multiselect(
+                        "Filtrar por classificação:",
+                        options=resultado['classificacao'].unique(),
+                        default=resultado['classificacao'].unique()
+                    )
+                    resultado_filtrado = resultado[resultado['classificacao'].isin(class_filter)]
+                else:
+                    resultado_filtrado = resultado
+                
+                # Mostrar tabela
+                colunas_mostrar = ['municipio', 'UF', 'Região', 'taxa_abandono']
+                if 'LISA_cluster_label' in resultado_filtrado.columns:
+                    colunas_mostrar.extend(['LISA_cluster_label', 'LISA_I', 'LISA_p'])
+                elif 'classificacao' in resultado_filtrado.columns:
+                    colunas_mostrar.append('classificacao')
+                
+                colunas_disponiveis = [col for col in colunas_mostrar if col in resultado_filtrado.columns]
+                
+                st.dataframe(
+                    resultado_filtrado[colunas_disponiveis].round(3),
+                    use_container_width=True
+                )
+                
+                # Download
+                csv_data = resultado_filtrado[colunas_disponiveis].to_csv(index=False)
+                st.download_button(
+                    "📥 Baixar dados (CSV)",
+                    csv_data,
+                    f"dados_analise_{ano_selecionado}.csv",
+                    "text/csv"
+                )
+            
+            # Resumo estatístico
             st.subheader("📊 Resumo Estatístico")
             
             col1, col2 = st.columns(2)
             
             with col1:
-                st.write("**Distribuição de Clusters:**")
-                cluster_summary = gdf['LISA_cluster_label'].value_counts()
-                for cluster, count in cluster_summary.items():
-                    percentage = (count / len(gdf)) * 100
-                    st.write(f"- **{cluster}**: {count} municípios ({percentage:.1f}%)")
+                if 'LISA_cluster_label' in resultado.columns:
+                    st.write("**Distribuição de Clusters LISA:**")
+                    cluster_summary = resultado['LISA_cluster_label'].value_counts()
+                    for cluster, count in cluster_summary.items():
+                        percentage = (count / len(resultado)) * 100
+                        st.write(f"- **{cluster}**: {count} ({percentage:.1f}%)")
+                elif 'classificacao' in resultado.columns:
+                    st.write("**Distribuição por Classificação:**")
+                    class_summary = resultado['classificacao'].value_counts()
+                    for classe, count in class_summary.items():
+                        percentage = (count / len(resultado)) * 100
+                        st.write(f"- **{classe}**: {count} ({percentage:.1f}%)")
             
             with col2:
                 st.write("**Estatísticas da Taxa de Abandono:**")
-                st.write(f"- **Média**: {gdf['taxa_abandono'].mean():.2f}%")
-                st.write(f"- **Mediana**: {gdf['taxa_abandono'].median():.2f}%")
-                st.write(f"- **Desvio padrão**: {gdf['taxa_abandono'].std():.2f}%")
-                st.write(f"- **Mínimo**: {gdf['taxa_abandono'].min():.2f}%")
-                st.write(f"- **Máximo**: {gdf['taxa_abandono'].max():.2f}%")
+                st.write(f"- **Média**: {resultado['taxa_abandono'].mean():.2f}%")
+                st.write(f"- **Mediana**: {resultado['taxa_abandono'].median():.2f}%")
+                st.write(f"- **Desvio padrão**: {resultado['taxa_abandono'].std():.2f}%")
+                st.write(f"- **Mínimo**: {resultado['taxa_abandono'].min():.2f}%")
+                st.write(f"- **Máximo**: {resultado['taxa_abandono'].max():.2f}%")
         
         else:
-            st.error(f"❌ Não foi possível calcular as estatísticas LISA para o ano {ano_selecionado}. Verifique se há dados disponíveis para este ano.")
-
+            st.error(f"❌ Não foi possível processar os dados para o ano {ano_selecionado}")
+    
     else:
-        st.error("❌ Erro ao carregar os dados do sistema. Verifique se os arquivos estão no formato correto.")
+        st.error("❌ Erro ao carregar dados")
 
-else:
-    st.warning("""
-    ⚠️ **Arquivos de dados não encontrados!**
+# Informações sobre dependências
+if not SPATIAL_AVAILABLE:
+    st.sidebar.warning("""
+    ⚠️ **Modo Simplificado**
     
-    Para usar este aplicativo, você precisa ter a seguinte estrutura de pastas:
+    Algumas dependências espaciais não estão disponíveis.
+    O aplicativo está executando com funcionalidades básicas.
     
-    ```
-    seu_projeto/
-    ├── streamlit_lisa_vscode.py  (este arquivo)
-    └── data/
-        ├── municipios.csv
-        └── txabandono-municipios.xlsx
-    ```
-    
-    **Passos para configurar:**
-    1. Crie uma pasta chamada `data` no mesmo diretório deste arquivo
-    2. Coloque os arquivos `municipios.csv` e `txabandono-municipios.xlsx` dentro da pasta `data`
-    3. Execute novamente o aplicativo
+    Para análise LISA completa, instale:
+    - geopandas
+    - libpysal
+    - esda
     """)
-    
-    # Mostrar instruções de execução
-    st.info("""
-    **💡 Como executar este aplicativo:**
-    
-    1. **Instale as dependências:**
-    ```bash
-    pip install streamlit pandas numpy geopandas plotly folium streamlit-folium libpysal esda openpyxl
-    ```
-    
-    2. **Execute o aplicativo:**
-    ```bash
-    streamlit run streamlit_lisa_vscode.py
-    ```
-    """)
+
+# Executar aplicativo
+if __name__ == "__main__":
+    main()
+
