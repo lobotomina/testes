@@ -21,13 +21,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS customizado para melhorar a aparência
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2 rem;
+        font-family: helvetica, sans-serif;
         font-weight: bold;
-        color: #1f77b4;
+        color: #468A9A;
         text-align: center;
         margin-bottom: 2rem;
     }
@@ -46,24 +46,31 @@ st.markdown("""
         padding-right: 20px;
     }
     .data-info {
-        background-color: #e8f4fd;
-        border: 1px solid #1f77b4;
+        background-color: #EEEEEE;
+        border: 1px solid #EEEEEE;
         border-radius: 0.5rem;
         padding: 1rem;
         margin: 1rem 0;
+    }
+    h4 {
+        color: #468A9A;
+        font-family: helvetica, sans-serif;
+        font-size: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Título principal
-st.markdown('<h1 class="main-header">📊 Análise Espacial LISA - Abandono Escolar no Ensino Médio</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">Análise Espacial LISA - Abandono Escolar no Ensino Médio</h1>', unsafe_allow_html=True)
 
 # Banner informativo
 st.markdown("""
 <div class="data-info">
-    <h3>📊 Dados Pré-carregados</h3>
-    <p>Este aplicativo utiliza os dados de abandono escolar e informações geográficas já carregados no sistema. 
-    Simplesmente selecione o ano desejado para iniciar a análise!</p>
+    <h4>Sobre: </h4>
+    <p>Aplicativo desenvolvido para análise Análise Espacial LISA - Abandono Escolar no Ensino Médio por ano.
+    Trata-se de uma etapa incial de pesquisa acadêmica desenvolvida no conexto da disciplina 'Machine Learning' pelos alunos:  Marcelo Elias, Jane Adriana e Paula Fernanda do PPGTD/UFT.
+    Para o desenvolvimento foi utilizado apoio de ferramentas de inteligência artificial generativa com a finalidade precípua de ajuste e correção de códigos. Na verdade, não sabemos ao certo até que ponto ajudou
+    ou atrapalhou, mas ainda assim acreditamos ter sido válido, sobretudo pelos efeitos especiais e detalhes estéticos adicionados sem solicitação.</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -89,7 +96,7 @@ def load_data():
             return None, None, False
         
         # Carregar dados de abandono
-        st.info(f"📂 Carregando dados de: {abandono_path}")
+        st.info(f"Dados separados por ano - selecione o ano desejado na barra lateral")
         df = pd.read_excel(abandono_path)
         
         # Processar dados de abandono
@@ -104,23 +111,13 @@ def load_data():
         df["cod_mun"] = df["cod_mun"].astype(int)
         
         # Carregar dados geográficos
-        st.info(f"📂 Carregando dados de: {municipios_path}")
+        st.info(f"Os dados do ano de 2021 não devem ser considerados pela existência de inconsistências devido à pandemia de Covid-19.")
         df_geo = pd.read_csv(municipios_path, encoding="latin1")
         
         return df, df_geo, True
         
     except Exception as e:
         st.error(f"❌ Erro ao carregar dados: {e}")
-        st.info("""
-        💡 **Estrutura de pastas esperada:**
-        ```
-        seu_projeto/
-        ├── streamlit_lisa_vscode.py  (este arquivo)
-        └── data/
-            ├── municipios.csv
-            └── txabandono-municipios.xlsx
-        ```
-        """)
         return None, None, False
 
 @st.cache_data
@@ -270,31 +267,18 @@ def create_plotly_charts(gdf):
     
     return fig_bar, fig_hist, fig_box
 
-# Verificar estrutura de pastas
-st.sidebar.header("📁 Verificação de Arquivos")
-
-# Mostrar estrutura esperada
-with st.sidebar.expander("📋 Estrutura de Pastas Esperada"):
-    st.code("""
-    seu_projeto/
-    ├── streamlit_lisa_vscode.py
-    └── data/
-        ├── municipios.csv
-        └── txabandono-municipios.xlsx
-    """)
-
 # Verificar se os arquivos existem
 base_path = Path(".")
 abandono_path = base_path / "data" / "txabandono-municipios.xlsx"
 municipios_path = base_path / "data" / "municipios.csv"
 
 if abandono_path.exists():
-    st.sidebar.success("✅ txabandono-municipios.xlsx encontrado")
+    st.sidebar.success("Carregemento efetuado com sucesso")
 else:
     st.sidebar.error("❌ txabandono-municipios.xlsx não encontrado")
 
 if municipios_path.exists():
-    st.sidebar.success("✅ municipios.csv encontrado")
+    st.sidebar.success("Municípios do Brasil")
 else:
     st.sidebar.error("❌ municipios.csv não encontrado")
 
@@ -305,9 +289,9 @@ if abandono_path.exists() and municipios_path.exists():
 
     if data_loaded and df is not None and df_geo is not None:
         # Sidebar com informações dos dados
-        st.sidebar.header("📊 Informações dos Dados")
+        st.sidebar.header("Informações:")
         st.sidebar.success(f"""
-        **✅ Dados Carregados com Sucesso!**
+        **Dados disponíveis**
         
         **Municípios:** {len(df['cod_mun'].unique())}  
         **Anos disponíveis:** {len(df['Ano'].unique())}  
@@ -320,19 +304,19 @@ if abandono_path.exists() and municipios_path.exists():
         st.sidebar.info(f"**Anos disponíveis:** {', '.join(map(str, anos_disponiveis))}")
         
         # Seleção de ano - PRINCIPAL CONTROLE
-        st.sidebar.header("🎯 Seleção de Análise")
+        st.sidebar.header("Seleção de Análise")
         ano_selecionado = st.sidebar.selectbox(
-            "📅 Selecione o Ano para Análise",
+            "Selecione o Ano para Análise",
             anos_disponiveis,
             index=len(anos_disponiveis)-1,  # Último ano por padrão
-            help="Escolha o ano que deseja analisar"
+            help="Escolha o ano - exceto 2021"
         )
         
         # Opções de visualização
-        st.sidebar.header("🔍 Opções de Visualização")
-        mostrar_mapas = st.sidebar.checkbox("🗺️ Mostrar mapas interativos", value=True)
-        mostrar_graficos = st.sidebar.checkbox("📈 Mostrar gráficos estatísticos", value=True)
-        mostrar_detalhes = st.sidebar.checkbox("📋 Mostrar dados detalhados", value=True)
+        st.sidebar.header("Opções de Visualização")
+        mostrar_mapas = st.sidebar.checkbox("Mapas interativos", value=True)
+        mostrar_graficos = st.sidebar.checkbox("Gráficos estatísticos", value=True)
+        mostrar_detalhes = st.sidebar.checkbox("Dados detalhados", value=True)
         
         # Calcular LISA para o ano selecionado
         with st.spinner(f"🧮 Calculando estatísticas LISA para {ano_selecionado}..."):
@@ -340,7 +324,7 @@ if abandono_path.exists() and municipios_path.exists():
         
         if gdf is not None:
             # Métricas principais
-            st.subheader(f"📊 Resultados da Análise LISA - {ano_selecionado}")
+            st.subheader(f"Resultados da Análise LISA - {ano_selecionado}")
             
             col1, col2, col3, col4 = st.columns(4)
             
