@@ -7,12 +7,10 @@ streamlit-folium
 openpyxl
 setuptools
 wheel
-geopandas
-shapely
-fiona
-pyproj
+geopandas==0.14.3
+shapely>=2.0.1
+fiona>=1.9.4
+pyproj==3.3.1  
 libpysal
 esda
-pygeos
-pydeck
-shapely
+rtree 
