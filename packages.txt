@@ -1,15 +1,5 @@
-# Packages otimizado para Streamlit Cloud
-# Dependências mínimas necessárias
-
-# Dependências geoespaciais básicas
+libgl1
+build-essential
 libgdal-dev
 libgeos-dev
 libproj-dev
-
-# Dependências de sistema essenciais
-libgl1
-build-essential
-
-# NOTA: Removidas dependências que podem causar conflitos:
-# - gdal-bin (pode causar conflitos de versão)
-# - libspatialindex-dev (não essencial para funcionalidade básica)
