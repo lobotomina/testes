@@ -7,7 +7,7 @@ streamlit-folium
 openpyxl
 setuptools
 wheel
-geopandas==0.13.2
+geopandas
 shapely==2.0.1
 fiona==1.9.4
 pyproj==3.4.1
