@@ -8,9 +8,9 @@ openpyxl
 setuptools
 wheel
 geopandas
-shapely==2.0.1
-fiona==1.9.4
-pyproj==3.4.1
-libpysal==4.7.0
-esda==2.4.3
+shapely
+fiona
+pyproj
+libpysal
+esda
 pygeos
