@@ -3,3 +3,5 @@ libgeos-dev
 libproj-dev
 libgl1
 build-essential
+gdal-bin
+python-rtree
